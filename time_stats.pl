@@ -175,123 +175,6 @@ sub print_batches {
     print "end:".&get_datetime($end)."\n";
   }
 
-  #          <---------------->            batch
-  #          <---------------->            doc out
-  #                    <------>            doc out
-  # <---->  <----> <-----> <---->          doc out
-  #                               <----->  doc in
-
-  sub bdoc {
-    my ($batch, $doc) = @_;
-    return $doc->{beg} - $batch->{end};
-  }
-
-sub cluster_batches2 {
-  my ($Docs, $Batches) = @_;
-  my $doc_N = 0;
-  foreach my $doc (@{ $Docs }) {
-    my @B;
-    foreach my $batch ( @{ $Batches } ) {
-      my $status = &bdoc($batch, $doc);
-      push @B, [$batch, $status] if $status > 0;
-    }
-    if (not @B) {
-      push @{ $Batches }, {
-			   beg => $doc->{beg},
-			   end => $doc->{end},
-			   docs => [ $doc ],
-			   docs_N => 1
-			  }
-    } else {
-      @B = sort { $a->[1] <=> $b->[1] } @B;
-      my $batch = $B[0]->[0];
-      # include doc in batch
-      $batch->{end} = $doc->{end};
-      push @{ $batch->{docs} }, $doc;
-      $batch->{docs_N}++;
-    }
-  }
-  $doc_N++;
-  print STDERR "... $doc_N" if $opt_v and not ($doc_N % 10000);
-}
-
-# return
-#    - the index of the first batch whose "end" is before tstamp (usually document's "beg")
-#    - the difference between batch "end" and tstamp
-
-sub bsearch {
-  my ($l, $r, $Batches, $tstamp) = @_;
-  my $last_ok = $r;
-  my $last_diff = $opt_threshold + 1;
-  return ($l, $last_diff) if $Batches->[$l]->{end} > $tstamp ;
-  while($r > $l) {
-    my $mid = int ( ($l + $r) / 2 );
-    my $diff = $tstamp - $Batches->[$mid]->{end};
-    if ($diff < 0) {
-      # doc "beg" is before batch end
-      # look at the left
-      $r = $mid;
-    } else {
-      # doc "beg" is after batch end
-      # look at the right
-      $last_ok = $mid;
-      $last_diff = $diff;
-      $l = $mid + 1;
-    }
-  }
-  return ($last_ok, $last_diff);
-}
-
-sub repos_batch {
-  my ($Batches, $batch, $i, $m) = @_;
-  for(my $j = $i + 1; $j < $m; $j++) {
-    last if $Batches->[$j]->{end} >= $batch->{end};
-    $Batches->[$j - 1] = $Batches->[$j];
-    $Batches->[$j] = $batch;
-  }
-}
-
-sub cluster_batches {
-
-  my ($Docs) = @_;
-  my $doc_N = 0;
-
-  my $first_doc = $Docs->[0];
-  $Batches = [ {
-		beg => $first_doc->{beg},
-		end => $first_doc->{end},
-		docs => [ $first_doc ],
-		docs_N => 1
-	       } ];
-
-  for(my $k = 1; $k < scalar @{ $Docs }; $k++) {
-    my $doc = $Docs->[$k];
-    my $m = scalar( @{ $Batches } );
-    my ($i, $diff) = &bsearch(0, $m, $Batches, $doc->{beg});
-    if ( $diff < $opt_threshold ) {
-      # add to batch at position $i and reposition
-      my $batch = $Batches->[$i];
-      $batch->{end} = $doc->{end};
-      push @{ $batch->{docs} }, $doc;
-      $batch->{docs_N}++;
-      &repos_batch($Batches, $batch, $i, $m);
-    } else {
-      # create new batch at position $i and reposition
-      my $new_batch = {
-		       beg => $doc->{beg},
-		       end => $doc->{end},
-		       docs => [ $doc ],
-		       docs_N => 1
-		      };
-      ($i) = &bsearch(0, $m, $Batches, $doc->{end});
-      splice(@{ $Batches }, $i, 0, $new_batch);
-      &repos_batch($Batches, $new_batch, $i, $m + 1);
-    }
-  }
-  return $Batches;
-}
-
-
 sub stat_doc {
 
   my ($fh) = @_;
@@ -419,3 +302,123 @@ sub load_flist {
     push @{ $ifnames }, $_;
   }
 }
+
+##########################################################
+# clustering stuff
+
+  #          <---------------->            batch
+  #          <---------------->            doc out
+  #                    <------>            doc out
+  # <---->  <----> <-----> <---->          doc out
+  #                               <----->  doc in
+
+  sub bdoc {
+    my ($batch, $doc) = @_;
+    return $doc->{beg} - $batch->{end};
+  }
+
+sub cluster_batches2 {
+  my ($Docs, $Batches) = @_;
+  my $doc_N = 0;
+  foreach my $doc (@{ $Docs }) {
+    my @B;
+    foreach my $batch ( @{ $Batches } ) {
+      my $status = &bdoc($batch, $doc);
+      push @B, [$batch, $status] if $status > 0;
+    }
+    if (not @B) {
+      push @{ $Batches }, {
+			   beg => $doc->{beg},
+			   end => $doc->{end},
+			   docs => [ $doc ],
+			   docs_N => 1
+			  }
+    } else {
+      @B = sort { $a->[1] <=> $b->[1] } @B;
+      my $batch = $B[0]->[0];
+      # include doc in batch
+      $batch->{end} = $doc->{end};
+      push @{ $batch->{docs} }, $doc;
+      $batch->{docs_N}++;
+    }
+  }
+  $doc_N++;
+  print STDERR "... $doc_N" if $opt_v and not ($doc_N % 10000);
+}
+
+# return
+#    - the index of the first batch whose "end" is before tstamp (usually document's "beg")
+#    - the difference between batch "end" and tstamp
+
+sub bsearch {
+  my ($l, $r, $Batches, $tstamp) = @_;
+  my $last_ok = $r;
+  my $last_diff = $opt_threshold + 1;
+  return ($l, $last_diff) if $Batches->[$l]->{end} > $tstamp ;
+  while($r > $l) {
+    my $mid = int ( ($l + $r) / 2 );
+    my $diff = $tstamp - $Batches->[$mid]->{end};
+    if ($diff < 0) {
+      # doc "beg" is before batch end
+      # look at the left
+      $r = $mid;
+    } else {
+      # doc "beg" is after batch end
+      # look at the right
+      $last_ok = $mid;
+      $last_diff = $diff;
+      $l = $mid + 1;
+    }
+  }
+  return ($last_ok, $last_diff);
+}
+
+sub repos_batch {
+  my ($Batches, $batch, $i, $m) = @_;
+  for(my $j = $i + 1; $j < $m; $j++) {
+    last if $Batches->[$j]->{end} >= $batch->{end};
+    $Batches->[$j - 1] = $Batches->[$j];
+    $Batches->[$j] = $batch;
+  }
+}
+
+sub cluster_batches {
+
+  my ($Docs) = @_;
+  my $doc_N = 0;
+
+  my $first_doc = $Docs->[0];
+  $Batches = [ {
+		beg => $first_doc->{beg},
+		end => $first_doc->{end},
+		docs => [ $first_doc ],
+		docs_N => 1
+	       } ];
+
+  for(my $k = 1; $k < scalar @{ $Docs }; $k++) {
+    my $doc = $Docs->[$k];
+    my $m = scalar( @{ $Batches } );
+    my ($i, $diff) = &bsearch(0, $m, $Batches, $doc->{beg});
+    if ( $diff < $opt_threshold ) {
+      # add to batch at position $i and reposition
+      my $batch = $Batches->[$i];
+      $batch->{end} = $doc->{end};
+      push @{ $batch->{docs} }, $doc;
+      $batch->{docs_N}++;
+      &repos_batch($Batches, $batch, $i, $m);
+    } else {
+      # create new batch at position $i and reposition
+      my $new_batch = {
+		       beg => $doc->{beg},
+		       end => $doc->{end},
+		       docs => [ $doc ],
+		       docs_N => 1
+		      };
+      ($i) = &bsearch(0, $m, $Batches, $doc->{end});
+      splice(@{ $Batches }, $i, 0, $new_batch);
+      &repos_batch($Batches, $new_batch, $i, $m + 1);
+    }
+  }
+  return $Batches;
+}
+
