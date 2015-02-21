@@ -8,6 +8,7 @@ use Encode;
 use JSON;
 use Data::Dumper;
 use IO::Uncompress::Bunzip2 qw(bunzip2 $Bunzip2Error) ;
+use Data::Dumper;
 
 use strict;
 
@@ -26,7 +27,12 @@ my %opts;
 my $parser = XML::LibXML->new(); # XML global parser
 $parser->keep_blanks(0);
 
-getopts('ht:r:w:vf:d:gF', \%opts);
+getopts('ht:r:w:vf:d:gFm', \%opts);
+
+my $Docs = &docs_statistics_mongo($ARGV[0]);
+#print Dumper($Docs);
+&gantt($Docs);
+die;
 
 &usage() if $opts{'h'};
 
@@ -45,7 +51,7 @@ if (defined $opt_threshold) {
 }
 print STDERR "Using threshold $opt_threshold\n" if $opt_v;
 
-my $Docs = []; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, bstamp=> tics, estamp=>tics }, ...], ... )
+my $Docs = []; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
 
 if ($opts{'r'}) {
 	print STDERR "Reading JSON file ".$opts{'r'}."... " if $opt_v;
@@ -319,39 +325,40 @@ sub num_chars {
 
 sub gantt {
 
-	my $Docs = shift; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, bstamp=> tics, estamp=>tics }, ...], ... )
+	my $Docs = shift; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
 
-	my $tsecs = $Docs->[-1]->{end} - $Docs->[0]->{beg};
-	return unless $tsecs > 0;
-	my $max_columns = 100;
-	my $factor = $max_columns / $tsecs;
-	my $G = {};
 	foreach my $doc (@{ $Docs }) {
+		my $tsecs = $doc->{end} - $doc->{beg};
+		return unless $tsecs > 0;
+		my $max_columns = 100;
+		my $factor = $max_columns / $tsecs;
+		my $G = {};
 		&gantt_doc($doc, $G);
-	}
-	# print G
-	foreach my $n (sort { $G->{$a}->{i} <=> $G->{$b}->{i} } keys %{ $G } ) {
-		# $G->{$n} = [ [lead, elapsed], [prev, elapsed], ... ]
-		my $prev = 0;
-		my $str ;
-		foreach my $X (@{ $G->{$n}->{P} }) {
-			my ($lead, $elapsed) = @{ $X };
-			my $gap = $lead - $prev;
-			$prev += $gap + $elapsed;
-			my $np = &num_chars($gap, $factor);
-			my $ns = &num_chars($elapsed, $factor);
-			my $gc = " " x $np;
-			my $ec = "X";
-			if ($ns > 1) {
-				$ec = "<" . "-" x ($ns - 2) . ">";
+		# print G
+		foreach my $n (sort { $G->{$a}->{i} <=> $G->{$b}->{i} } keys %{ $G } ) {
+			# $G->{$n} = [ [lead, elapsed], [prev, elapsed], ... ]
+			my $prev = 0;
+			my $str ;
+			foreach my $X (@{ $G->{$n}->{P} }) {
+				my ($lead, $elapsed) = @{ $X };
+				my $gap = $lead - $prev;
+				$prev += $gap + $elapsed;
+				my $np = &num_chars($gap, $factor);
+				my $ns = &num_chars($elapsed, $factor);
+				my $gc = " " x $np;
+				my $ec = "X";
+				if ($ns > 1) {
+					$ec = "<" . "-" x ($ns - 2) . ">";
+				}
+				$str .= $gc.$ec;
 			}
-			$str .= $gc.$ec;
+			printf ("%10s | %s\n", $n, $str);
 		}
-		printf ("%10s | %s\n", $n, $str);
-	}
-	print "\n";
-	foreach my $n (sort { $G->{$a}->{i} <=> $G->{$b}->{i} } keys %{ $G } ) {
-		printf ("%10s | %s\n", $n, join(", ", @{ $G->{$n}->{M} }));
+		print "\n";
+		foreach my $n (sort { $G->{$a}->{i} <=> $G->{$b}->{i} } keys %{ $G } ) {
+			printf ("%10s | %s\n", $n, join(", ", @{ $G->{$n}->{M} }));
+		}
+		print "\n";
 	}
 }
 
@@ -493,3 +500,80 @@ sub cluster_batches {
 	return $Batches;
 }
 
+##################################################################
+# read JSON from mongo log
+
+sub docs_statistics_mongo {
+
+	my ($ifname) = @_;
+	my $fh = &open_maybe_bz2($ifname);
+	my @T = ("[\n");
+	while(<$fh>) {
+		s/ObjectId\(([^\)]+)\)/$1/;
+		s/ISODate\(([^\)]+)\)/$1/;
+		$_ .= "," if /^\}$/;
+		push @T, $_;
+	}
+	$T[-1] =~ s/\,$//;
+	push @T, "]\n";
+	my $Mongo_out = decode_json(join("", @T));
+	my $H = {};
+	foreach my $mout (@{ $Mongo_out }) {
+		my $doc_id = $mout->{doc_id} ;
+		my $tstamp = str2time($mout->{timestamp});
+		my $h = $H->{$doc_id};
+		if (not defined $h) {
+			$H->{$doc_id} = { module => {}, beg => $tstamp, end => $tstamp};
+			$h = $H->{$doc_id};
+		}
+		$h->{beg} = $tstamp if $tstamp < $h->{beg};
+		$h->{end} = $tstamp if $tstamp > $h->{end};
+		my $mid = $mout->{module_id} // $mout->{tag};
+		my $module = $h->{module}->{$mid};
+		if (not defined $module) {
+			$h->{module}->{$mid} = { beg => $tstamp, end => $tstamp };
+			$module = $h->{module}->{$mid};
+		}
+
+		$module->{$mout->{tag}} = $tstamp;
+		$module->{beg} = $tstamp if $tstamp < $module->{beg};
+		$module->{end} = $tstamp if $tstamp > $module->{end};
+		#$module->{$mout->{hostname} } = 1;
+		$module->{hostname} = $mout->{hostname};
+	}
+	#die Dumper($H->{"530S-4081-JCBD-8510.xml_f502d3593b7f299a18080e398438f84e.naf_9d67524b23995ffe4a8460d7d0dc4e21"});
+
+	# split hostnames into CPUs
+	while (my ($docid, $h) = each % { $H }) {
+		# sort modules accroding to begin timestamp
+		my $hends;
+		my $hm = $h->{module};
+		foreach my $mod (sort { $hm->{$a}->{beg} <=> $hm->{$b}->{beg} } keys %{ $hm } ) {
+			my $module = $hm->{$mod} ;
+			# locate index i such that $module->{beg} < $hends->{hostname}->[i]
+			my $i = 0;
+			my $ends = $hends->{$module->{hostname}};
+			if (not defined $ends) { $hends->{$module->{hostname}} = []; $ends = $hends->{$module->{hostname}}};
+			$i++ while($i < @{ $ends } and $module->{beg} <= $ends->[$i] );
+			$ends->[$i] = $module->{end};
+			$i++;
+			$module->{hostname} .= "#$i";
+		}
+	}
+	#die Dumper($H->{"530S-4081-JCBD-8510.xml_f502d3593b7f299a18080e398438f84e.naf_9d67524b23995ffe4a8460d7d0dc4e21"});
+
+	# create Docs array
+	my $Docs;
+	while (my ($docid, $h) = each % { $H }) {
+		my $d = { beg=> $h->{beg}, end=> $h->{end}, modules => [] };
+		my $hm = $h->{module};
+		foreach my $mod (sort { $hm->{$a}->{beg} <=> $hm->{$b}->{beg} } keys %{ $hm } ) {
+			my $module = $hm->{$mod} ;
+			push @{ $d->{modules} }, { name => $mod, secs => $module->{end} - $module->{beg},
+									   host => $module->{hostname}, 
+									   btstamp => $module->{beg}, etstamp => $module->{end} };
+		}
+		push @{ $Docs }, $d;
+	}
+	return $Docs;
+}
