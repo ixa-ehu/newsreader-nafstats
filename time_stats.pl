@@ -29,14 +29,15 @@ $parser->keep_blanks(0);
 
 getopts('ht:r:w:vf:d:gFm', \%opts);
 
-my $Docs = &docs_statistics_mongo($ARGV[0]);
-#print Dumper($Docs);
-&gantt($Docs);
-die;
+# my $Docs = &docs_statistics_mongo($ARGV[0]);
+# #print Dumper($Docs);
+# &gantt($Docs);
+# die;
 
 &usage() if $opts{'h'};
 
 my $opt_gantt = $opts{'g'} // undef;
+
 my $opt_force = $opts{'F'} // undef;
 
 my $dataset_name = $opts{'d'} // undef;
@@ -95,7 +96,7 @@ if ($opts{'w'}) {
 
 &print_module_stats($Docs);
 
-&gantt($Docs) if $opt_gantt;
+&gantt($Docs, 0) if $opt_gantt;
 
 sub docs_statistics {
 
@@ -197,7 +198,8 @@ sub print_batches {
 	  my @D;
 	  foreach my $elem ($doc_elem->findnodes('/NAF/nafHeader/linguisticProcessors')) {
 		  # { name => module_name, btsamp->timestamp_tics, etsamp->timestamp_tics, secs=>secs}
-		  push @D, &lingProc_lps($elem);
+		  my @lp = &lingProc_lps($elem);
+		  push @D, @lp if @lp;
 	  }
 	  return undef unless @D;
 	  return { beg => $D[0]->{btstamp},
@@ -234,6 +236,7 @@ sub lingProc_lps {
 	my $lingproc_elem = shift;
 	my @D;
 	my $pre = $lingproc_elem->getAttribute("layer")."#";
+	return () if $pre eq "deps#";
 	foreach my $elem ($lingproc_elem->findnodes('./lp')) {
 		my $modname = $elem->getAttribute("name");
 		my $host = $elem->getAttribute("hostname") // "unknown";
@@ -322,15 +325,29 @@ sub num_chars {
 	return int($x * $factor);
 }
 
-
 sub gantt {
 
-	my $Docs = shift; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
+    my ($Docs, $agg) = @_;
 
+    if ($agg) {
+	my $tsecs = $Docs->[-1]->{end} - $Docs->[0]->{beg};
+	&do_gantt($Docs, $tsecs);
+    } else {
 	foreach my $doc (@{ $Docs }) {
-		my $tsecs = $doc->{end} - $doc->{beg};
-		return unless $tsecs > 0;
-		my $max_columns = 100;
+	    my $tsecs = $doc->{end} - $doc->{beg};
+	    &do_gantt([$doc], $tsecs);
+	}
+    }
+}
+
+sub do_gantt {
+
+	my ($Docs, $tsecs) = @_; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
+
+	return unless $tsecs > 0;
+	print "* gantt\n";
+	foreach my $doc (@{ $Docs }) {
+		my $max_columns = 300;
 		my $factor = $max_columns / $tsecs;
 		my $G = {};
 		&gantt_doc($doc, $G);
@@ -352,11 +369,11 @@ sub gantt {
 				}
 				$str .= $gc.$ec;
 			}
-			printf ("%10s | %s\n", $n, $str);
+			printf ("%14s | %s\n", $n, $str);
 		}
 		print "\n";
 		foreach my $n (sort { $G->{$a}->{i} <=> $G->{$b}->{i} } keys %{ $G } ) {
-			printf ("%10s | %s\n", $n, join(", ", @{ $G->{$n}->{M} }));
+			printf ("%14s | %s\n", $n, join(", ", @{ $G->{$n}->{M} }));
 		}
 		print "\n";
 	}
