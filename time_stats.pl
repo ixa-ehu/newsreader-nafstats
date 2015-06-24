@@ -94,7 +94,7 @@ if ($opts{'w'}) {
 # print STDERR "\nDone!\n" if $opt_v;
 # &display_batches($Batches);
 
-&display_module_stats($Docs);
+&display_stats($Docs);
 
 &gantt($Docs, 0) if $opt_gantt;
 
@@ -149,37 +149,46 @@ sub display_module_stats {
 
 	my $Docs = shift;
 
-	my $beg = 100000000000;
-	my $end = 0;
+	my $tot_beg = 100000000000;
+	my $tot_end = 0;
 	my %H;
 	my $doc_N = 0;
-	my $secstot = 0;			# total counting header times
+	my $doc_proctime = 0;  # document processing time
+	my $module_proctime = 0; # module processing time
 
 	foreach my $doc ( @{ $Docs } ) {
 		$doc_N++;
-		$beg = $doc->{beg} if $doc->{beg} < $beg;
-		$end = $doc->{end} if $doc->{end} > $end;
+		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
+		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
+		$doc_proctime += $doc->{end} - $doc->{beg};
 		foreach my $dd ( @{ $doc->{modules} } ) {
 			my $name = $dd->{name};
 			my $secs =  $dd->{secs};
-			$secstot += $secs;
 			$H{$name} += $secs;
+			$module_proctime += $secs;
 		}
 	}
 
-	my $dtot = $end - $beg;
+	my $elapsed_time = $tot_end - $tot_beg;
 	print "* Modules\n\n";
 	foreach my $name (sort { $H{$a} <=> $H{$b} } keys %H) {
 		my $h = $H{$name};
-		printf("| %s | %i | %.2f |\n", $name, $H{$name}, 100*$H{$name} / $secstot);
+		printf("| %s | %i | %.2f |\n", $name, $H{$name}, 100*$H{$name} / $module_proctime);
 	}
+
+	my $throughput_nolat = sprintf("%.4f", 60 * $doc_N / $elapsed_time); # docs/minutes
+	my $latency = sprintf("%.4f",$doc_proctime / (60 * $doc_N));  # minutes/docs
+
 	print "\n\n";
 	print "\n** stats\n\n";
-	print "docs:$doc_N\n";
-	print "processing_secs:$secstot\n";
-	print "elapsed_secs:$dtot\n";
-	print "beg:".&get_datetime($beg)."\n";
-	print "end:".&get_datetime($end)."\n";
+	print "DocN:$doc_N\n";
+	print "Document processing time (secs): $doc_proctime\n";
+	print "Elapsed time (secs): $elapsed_time\n";
+	print "Throughput (DocN/elapsed_time_minutes): $throughput_nolat\n";
+	print "Throughput with no latency ($IDLE_TIME): $throughput_nolat\n";
+	print "Latency (doc_proctime_minutes/DocN): $latency\n";
+	print "beg:".&get_datetime($tot_beg)."\n";
+	print "end:".&get_datetime($tot_end)."\n";
 }
 
 sub stat_doc {
@@ -398,6 +407,7 @@ sub gantt_doc {
 	}
 }
 
+
 ##########################################################
 # clustering stuff
 
@@ -590,7 +600,7 @@ sub docs_statistics_mongo {
 		foreach my $mod (sort { $hm->{$a}->{beg} <=> $hm->{$b}->{beg} } keys %{ $hm } ) {
 			my $module = $hm->{$mod} ;
 			push @{ $d->{modules} }, { name => $mod, secs => $module->{end} - $module->{beg},
-									   host => $module->{hostname}, 
+									   host => $module->{hostname},
 									   btstamp => $module->{beg}, etstamp => $module->{end} };
 		}
 		push @{ $Docs }, $d;
