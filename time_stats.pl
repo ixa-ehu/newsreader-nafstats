@@ -12,6 +12,8 @@ use Data::Dumper;
 
 use strict;
 
+my $IDLE_TIME = 600; # if greater, count as idle time (10 minutes)
+
 # usage: perl $0 -f file_with_filename_listings files
 
 sub usage {
@@ -144,8 +146,8 @@ sub display_batches {
 	print "\n";
 }
 
-# print module stats
-sub display_module_stats {
+# print stats
+sub display_stats {
 
 	my $Docs = shift;
 
@@ -169,14 +171,19 @@ sub display_module_stats {
 		}
 	}
 
+	my $idle = &compute_idle($Docs);
 	my $elapsed_time = $tot_end - $tot_beg;
+	if ($idle > $elapsed_time) {
+		die "Error. Idle time ($idle) is greater than elapsed time ($elapsed_time)\n";
+	}
 	print "* Modules\n\n";
 	foreach my $name (sort { $H{$a} <=> $H{$b} } keys %H) {
 		my $h = $H{$name};
 		printf("| %s | %i | %.2f |\n", $name, $H{$name}, 100*$H{$name} / $module_proctime);
 	}
 
-	my $throughput_nolat = sprintf("%.4f", 60 * $doc_N / $elapsed_time); # docs/minutes
+	my $throughput = sprintf("%.4f", 60 * $doc_N / ($elapsed_time - $idle)); # docs/minutes
+	my $throughput_noidle = sprintf("%.4f", 60 * $doc_N / $elapsed_time); # docs/minutes
 	my $latency = sprintf("%.4f",$doc_proctime / (60 * $doc_N));  # minutes/docs
 
 	print "\n\n";
@@ -184,12 +191,33 @@ sub display_module_stats {
 	print "DocN:$doc_N\n";
 	print "Document processing time (secs): $doc_proctime\n";
 	print "Elapsed time (secs): $elapsed_time\n";
-	print "Throughput (DocN/elapsed_time_minutes): $throughput_nolat\n";
-	print "Throughput with no latency ($IDLE_TIME): $throughput_nolat\n";
+	print "Throughput (DocN/elapsed_time_minutes): $throughput\n";
+	print "Throughput with no latency ($IDLE_TIME): $throughput_noidle\n";
 	print "Latency (doc_proctime_minutes/DocN): $latency\n";
 	print "beg:".&get_datetime($tot_beg)."\n";
 	print "end:".&get_datetime($tot_end)."\n";
 }
+
+sub compute_idle {
+
+	my ($Docs) = @_; # Docs are sorted according to doc begining timestamp
+	my $N = scalar @{ $Docs };
+
+	my $i = 0;
+	my $idle_time = 0;
+
+	while($i < $N - 1) {
+		my $j = $i + 1;
+		$j++ while $j < $N and $Docs->[$j]->{end} < $Docs->[$i]->{end};
+		if ($j < $N) {
+			my $delta = $Docs->[$j]->{beg} - $Docs->[$i]->{end};
+			$idle_time += $delta if $delta > $IDLE_TIME;
+		}
+		$i = $j;
+	}
+	return $idle_time;
+}
+
 
 sub stat_doc {
 
