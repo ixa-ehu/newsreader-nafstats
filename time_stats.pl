@@ -92,9 +92,9 @@ if ($opts{'w'}) {
 # print STDERR "\nClustering " if $opt_v;
 # my $Batches = &cluster_batches($Docs);
 # print STDERR "\nDone!\n" if $opt_v;
-# &print_batches($Batches);
+# &display_batches($Batches);
 
-&print_module_stats($Docs);
+&display_module_stats($Docs);
 
 &gantt($Docs, 0) if $opt_gantt;
 
@@ -126,7 +126,7 @@ sub docs_statistics {
 }
 
 
-sub print_batches {
+sub display_batches {
 	my $Batches = shift;
 	# print batches
 	print "* Batches\n\n";
@@ -144,84 +144,84 @@ sub print_batches {
 	print "\n";
 }
 
-  # print module stats
-  sub print_module_stats {
+# print module stats
+sub display_module_stats {
 
-	  my $Docs = shift;
+	my $Docs = shift;
 
-	  my $beg = 100000000000;
-	  my $end = 0;
-	  my %H;
-	  my $doc_N = 0;
-	  my $secstot = 0;			# total counting header times
+	my $beg = 100000000000;
+	my $end = 0;
+	my %H;
+	my $doc_N = 0;
+	my $secstot = 0;			# total counting header times
 
-	  foreach my $doc ( @{ $Docs } ) {
-		  $doc_N++;
-		  $beg = $doc->{beg} if $doc->{beg} < $beg;
-		  $end = $doc->{end} if $doc->{end} > $end;
-		  foreach my $dd ( @{ $doc->{modules} } ) {
-			  my $name = $dd->{name};
-			  my $secs =  $dd->{secs};
-			  $secstot += $secs;
-			  $H{$name} += $secs;
-		  }
-	  }
+	foreach my $doc ( @{ $Docs } ) {
+		$doc_N++;
+		$beg = $doc->{beg} if $doc->{beg} < $beg;
+		$end = $doc->{end} if $doc->{end} > $end;
+		foreach my $dd ( @{ $doc->{modules} } ) {
+			my $name = $dd->{name};
+			my $secs =  $dd->{secs};
+			$secstot += $secs;
+			$H{$name} += $secs;
+		}
+	}
 
-	  my $dtot = $end - $beg;
-	  print "* Modules\n\n";
-	  foreach my $name (sort { $H{$a} <=> $H{$b} } keys %H) {
-		  my $h = $H{$name};
-		  printf("| %s | %i | %.2f |\n", $name, $H{$name}, 100*$H{$name} / $secstot);
-	  }
-	  print "\n\n";
-	  print "\n** stats\n\n";
-	  print "docs:$doc_N\n";
-	  print "processing_secs:$secstot\n";
-	  print "elapsed_secs:$dtot\n";
-	  print "beg:".&get_datetime($beg)."\n";
-	  print "end:".&get_datetime($end)."\n";
-  }
+	my $dtot = $end - $beg;
+	print "* Modules\n\n";
+	foreach my $name (sort { $H{$a} <=> $H{$b} } keys %H) {
+		my $h = $H{$name};
+		printf("| %s | %i | %.2f |\n", $name, $H{$name}, 100*$H{$name} / $secstot);
+	}
+	print "\n\n";
+	print "\n** stats\n\n";
+	print "docs:$doc_N\n";
+	print "processing_secs:$secstot\n";
+	print "elapsed_secs:$dtot\n";
+	print "beg:".&get_datetime($beg)."\n";
+	print "end:".&get_datetime($end)."\n";
+}
 
-  sub stat_doc {
+sub stat_doc {
 
-	  my ($fh) = @_;
+	my ($fh) = @_;
 
-	  binmode $fh;				# remove utf-ness
+	binmode $fh;				# remove utf-ness
 
-	  my $doc = undef;
-	  eval {
-		  $doc = $parser->parse_fh($fh);
-	  };
-	  return undef if $@;
+	my $doc = undef;
+	eval {
+		$doc = $parser->parse_fh($fh);
+	};
+	return undef if $@;
 
-	  my $doc_elem = $doc->getDocumentElement;
+	my $doc_elem = $doc->getDocumentElement;
 
-	  my @D;
-	  foreach my $elem ($doc_elem->findnodes('/NAF/nafHeader/linguisticProcessors')) {
-		  # { name => module_name, btsamp->timestamp_tics, etsamp->timestamp_tics, secs=>secs}
-		  my @lp = &lingProc_lps($elem);
-		  push @D, @lp if @lp;
-	  }
-	  return undef unless @D;
-	  return { beg => $D[0]->{btstamp},
-			   end => $D[0]->{etstamp},
-			   modules => \@D } if @D == 1;
+	my @D;
+	foreach my $elem ($doc_elem->findnodes('/NAF/nafHeader/linguisticProcessors')) {
+		# { name => module_name, btsamp->timestamp_tics, etsamp->timestamp_tics, secs=>secs}
+		my @lp = &lingProc_lps($elem);
+		push @D, @lp if @lp;
+	}
+	return undef unless @D;
+	return { beg => $D[0]->{btstamp},
+			 end => $D[0]->{etstamp},
+			 modules => \@D } if @D == 1;
 
-	  @D = sort { $a->{btstamp} <=> $b->{btstamp} } @D;
-	  my $prev = 0;
-	  foreach my $r (@D) {
-		  if ($prev) {
-			  if (not $r->{secs} ) {
-				  $r->{secs} = ($r->{etstamp} - $prev);
-				  $r->{btstamp} = $prev;
-			  }
-		  }
-		  $prev = $r->{etstamp};
-	  }
-	  return { beg => $D[0]->{btstamp},
-			   end => $D[-1]->{etstamp},
-			   modules => \@D } ;
-  }
+	@D = sort { $a->{btstamp} <=> $b->{btstamp} } @D;
+	my $prev = 0;
+	foreach my $r (@D) {
+		if ($prev) {
+			if (not $r->{secs} ) {
+				$r->{secs} = ($r->{etstamp} - $prev);
+				$r->{btstamp} = $prev;
+			}
+		}
+		$prev = $r->{etstamp};
+	}
+	return { beg => $D[0]->{btstamp},
+			 end => $D[-1]->{etstamp},
+			 modules => \@D } ;
+}
 
 sub tstamp_attr {
 	my $elem = shift;
@@ -331,13 +331,13 @@ sub gantt {
     my ($Docs, $agg) = @_;
 
     if ($agg) {
-	my $tsecs = $Docs->[-1]->{end} - $Docs->[0]->{beg};
-	&do_gantt($Docs, $tsecs);
+		my $tsecs = $Docs->[-1]->{end} - $Docs->[0]->{beg};
+		&do_gantt($Docs, $tsecs);
     } else {
-	foreach my $doc (@{ $Docs }) {
-	    my $tsecs = $doc->{end} - $doc->{beg};
-	    &do_gantt([$doc], $tsecs);
-	}
+		foreach my $doc (@{ $Docs }) {
+			my $tsecs = $doc->{end} - $doc->{beg};
+			&do_gantt([$doc], $tsecs);
+		}
     }
 }
 
@@ -397,7 +397,6 @@ sub gantt_doc {
 		push @{ $h->{M} }, $m->{name} ;
 	}
 }
-
 
 ##########################################################
 # clustering stuff
@@ -526,7 +525,7 @@ sub docs_statistics_mongo {
 	my ($ifname) = @_;
 	my $fh = &open_maybe_bz2($ifname);
 	my @T = ("[\n");
-	while(<$fh>) {
+	while (<$fh>) {
 		s/ObjectId\(([^\)]+)\)/$1/;
 		s/ISODate\(([^\)]+)\)/$1/;
 		$_ .= "," if /^\}$/;
@@ -571,7 +570,10 @@ sub docs_statistics_mongo {
 			# locate index i such that $module->{beg} < $hends->{hostname}->[i]
 			my $i = 0;
 			my $ends = $hends->{$module->{hostname}};
-			if (not defined $ends) { $hends->{$module->{hostname}} = []; $ends = $hends->{$module->{hostname}}};
+			if (not defined $ends) {
+				$hends->{$module->{hostname}} = []; $ends = $hends->{$module->{hostname}};
+			}
+			;
 			$i++ while($i < @{ $ends } and $module->{beg} <= $ends->[$i] );
 			$ends->[$i] = $module->{end};
 			$i++;
