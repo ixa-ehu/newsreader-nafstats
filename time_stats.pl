@@ -54,7 +54,7 @@ if (defined $opt_threshold) {
 }
 print STDERR "Using threshold $opt_threshold\n" if $opt_v;
 
-my $Docs = []; # ( { fname=>"doc.xml", beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
+my $Docs = []; # ( { fname=>"doc.xml", beg=>tstamp, end=>tstamp, idle=>secs, modules=>[ {name=>string, secs=>int, host=>hostname, beg=> tics, end=>tics }, ...], ... )
 
 if ($opts{'r'}) {
 	print STDERR "Reading JSON file ".$opts{'r'}."... " if $opt_v;
@@ -146,6 +146,17 @@ sub display_batches {
 	print "\n";
 }
 
+sub R_proctime_vector {
+
+	my $Docs = shift;
+
+	my @T;
+	foreach my $doc ( @{ $Docs } ) {
+		push @T, $doc->{end} - $doc->{beg};
+	}
+	print "ptime <- c(".join(",", @T).")\n";
+}
+
 # print stats
 sub display_stats {
 
@@ -184,15 +195,16 @@ sub display_stats {
 
 	my $throughput = sprintf("%.4f", 60 * $doc_N / ($elapsed_time - $idle)); # docs/minutes
 	my $throughput_noidle = sprintf("%.4f", 60 * $doc_N / $elapsed_time); # docs/minutes
-	my $latency = sprintf("%.4f",$doc_proctime / (60 * $doc_N));  # minutes/docs
+	my $latency = sprintf("%.4f",1/60 * $doc_proctime / $doc_N);  # minutes/docs
 
 	print "\n\n";
 	print "\n** stats\n\n";
 	print "DocN:$doc_N\n";
 	print "Document processing time (secs): $doc_proctime\n";
 	print "Elapsed time (secs): $elapsed_time\n";
+	print "Idle time (secs): $idle\n";
 	print "Throughput (DocN/elapsed_time_minutes): $throughput\n";
-	print "Throughput with no latency ($IDLE_TIME): $throughput_noidle\n";
+	print "Throughput with no idle time (more than $IDLE_TIME secs): $throughput_noidle\n";
 	print "Latency (doc_proctime_minutes/DocN): $latency\n";
 	print "beg:".&get_datetime($tot_beg)."\n";
 	print "end:".&get_datetime($tot_end)."\n";
@@ -240,23 +252,26 @@ sub stat_doc {
 		push @D, @lp if @lp;
 	}
 	return undef unless @D;
-	return { beg => $D[0]->{btstamp},
-			 end => $D[0]->{etstamp},
+	return { beg => $D[0]->{beg},
+			 end => $D[0]->{end},
+			 idle => 0,
 			 modules => \@D } if @D == 1;
 
-	@D = sort { $a->{btstamp} <=> $b->{btstamp} } @D;
-	my $prev = 0;
-	foreach my $r (@D) {
-		if ($prev) {
-			if (not $r->{secs} ) {
-				$r->{secs} = ($r->{etstamp} - $prev);
-				$r->{btstamp} = $prev;
-			}
-		}
-		$prev = $r->{etstamp};
-	}
-	return { beg => $D[0]->{btstamp},
-			 end => $D[-1]->{etstamp},
+	@D = sort { $a->{beg} <=> $b->{beg} } @D;
+	my $module_idle = &compute_idle(\@D);
+	# my $prev = 0;
+	# foreach my $r (@D) {
+	# 	if ($prev) {
+	# 		if (not $r->{secs} ) {
+	# 			$r->{secs} = ($r->{end} - $prev);
+	# 			$r->{beg} = $prev;
+	# 		}
+	# 	}
+	# 	$prev = $r->{end};
+	# }
+	return { beg => $D[0]->{beg},
+			 end => $D[-1]->{end},
+			 idle => $module_idle,
 			 modules => \@D } ;
 }
 
@@ -294,8 +309,8 @@ sub lingProc_lps {
 		my $secs = $Etstamp_tics - $Btstamp_tics;
 		my $r = { name => $pre.$modname,
 				  host => $host,
-				  btstamp => $Btstamp_tics,
-				  etstamp => $Etstamp_tics,
+				  beg => $Btstamp_tics,
+				  end => $Etstamp_tics,
 				  secs => $secs };
 		push @D, $r;
 	}
@@ -380,7 +395,7 @@ sub gantt {
 
 sub do_gantt {
 
-	my ($Docs, $tsecs) = @_; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
+	my ($Docs, $tsecs) = @_; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, beg=> tics, end=>tics }, ...], ... )
 
 	return unless $tsecs > 0;
 	print "* gantt\n";
@@ -421,14 +436,14 @@ sub gantt_doc {
 
 	my ($doc, $G) = @_;
 
-	foreach my $m (sort { $a->{btstamp} <=> $b->{btstamp} } @{ $doc->{modules} }) {
+	foreach my $m (sort { $a->{beg} <=> $b->{beg} } @{ $doc->{modules} }) {
 		my $h = $G->{$m->{host}};
 		if (not defined $h) {
 			$G->{$m->{host}} = { i => scalar(keys %{ $G }), P => [], M => [] };
 			$h = $G->{$m->{host}};
 		}
- 		my $lead = $m->{btstamp} - $doc->{beg};
-		my $elapsed = $m->{etstamp} - $m->{btstamp};
+ 		my $lead = $m->{beg} - $doc->{beg};
+		my $elapsed = $m->{end} - $m->{beg};
 		$elapsed = 0 if $elapsed < 0;
 		push @{ $h->{P} }, [$lead, $elapsed] ;
 		push @{ $h->{M} }, $m->{name} ;
@@ -629,7 +644,7 @@ sub docs_statistics_mongo {
 			my $module = $hm->{$mod} ;
 			push @{ $d->{modules} }, { name => $mod, secs => $module->{end} - $module->{beg},
 									   host => $module->{hostname},
-									   btstamp => $module->{beg}, etstamp => $module->{end} };
+									   beg => $module->{beg}, end => $module->{end} };
 		}
 		push @{ $Docs }, $d;
 	}
