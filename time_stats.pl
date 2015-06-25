@@ -195,9 +195,12 @@ sub display_stats {
 			$module_proctime += $secs;
 		}
 	}
-
-	my $idle = &compute_idle($Docs);
+	die "No documents\n" unless $doc_N;
 	my $elapsed_time = $tot_end - $tot_beg;
+	die "No elapsed time" unless $elapsed_time > 0;
+	die "No document processing time" unless $doc_proctime > 0;
+	die "No module processing time" unless $module_proctime > 0;
+	my $idle = &compute_idle($Docs);
 	if ($idle > $elapsed_time) {
 		die "Error. Idle time ($idle) is greater than elapsed time ($elapsed_time)\n";
 	}
@@ -216,6 +219,7 @@ sub display_stats {
 	print "DocN:$doc_N\n";
 	print "Document processing time (secs): $doc_proctime\n";
 	print "Elapsed time (secs): $elapsed_time\n";
+	print "Parallelism rate: ".sprintf("%.4f", $doc_proctime / $elapsed_time)."\n";
 	print "Idle time (secs): $idle\n";
 	print "Throughput (DocN/elapsed_time_minutes): $throughput\n";
 	print "Throughput with no idle time (more than $IDLE_TIME secs): $throughput_noidle\n";
@@ -268,6 +272,7 @@ sub stat_doc {
 	return undef unless @D;
 	return { beg => $D[0]->{beg},
 			 end => $D[0]->{end},
+			 idle => 0,
 			 modules => \@D } if @D == 1;
 
 	@D = sort { $a->{beg} <=> $b->{beg} } @D;
@@ -283,7 +288,8 @@ sub stat_doc {
 	# 	$prev = $r->{end};
 	# }
 	return { beg => $D[0]->{beg},
-			 end => $D[-1]->{end} - $module_idle, # remove idle time
+			 end => $D[-1]->{end},
+			 idle => $module_idle, # remove idle time
 			 modules => \@D } ;
 }
 
@@ -301,9 +307,12 @@ sub lingProc_lps {
 	my $lingproc_elem = shift;
 	my @D;
 	my $pre = $lingproc_elem->getAttribute("layer")."#";
-	return () if $pre eq "deps#";
+	return () if $pre eq "deps#"; # TODO
+	my %modh;
 	foreach my $elem ($lingproc_elem->findnodes('./lp')) {
 		my $modname = $elem->getAttribute("name");
+		next unless $modh{$pre.$modname};
+		$modh{$pre.$modname} = 1; # do not count repeated modules
 		my $host = $elem->getAttribute("hostname") // "unknown";
 		my ($Btstamp, $Etstamp) = &tstamp_attr($elem);
 		next unless defined $Btstamp;
