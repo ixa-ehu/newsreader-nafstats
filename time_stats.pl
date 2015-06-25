@@ -172,8 +172,8 @@ sub display_stats {
 	foreach my $doc ( @{ $Docs } ) {
 		$doc_N++;
 		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
-		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
-		$doc_proctime += $doc->{end} - $doc->{beg};
+		$tot_end = $doc->{end} - $doc->{idle} if $doc->{end} - $doc->{idle} > $tot_end;
+		$doc_proctime += $doc->{end} - $doc->{beg} - $doc->{idle};
 		foreach my $dd ( @{ $doc->{modules} } ) {
 			my $name = $dd->{name};
 			my $secs =  $dd->{secs};
