@@ -96,8 +96,22 @@ if ($opts{'w'}) {
 # print STDERR "\nDone!\n" if $opt_v;
 # &display_batches($Batches);
 
-&display_stats($Docs);
+# &R_proctime_vector($Docs);
 
+# my  @dd = sort { $b->{end} - $b->{beg} <=> $a->{end} - $a->{beg} } @{ $Docs };
+# print join("\n", map { $_->{fname}."\t".($_->{end} - $_->{beg}) } @dd[0..99])."\n";
+
+# die;
+
+# my $DD = [];
+# foreach my $d (@{ $Docs } ) {
+# 	next unless $d->{fname} eq "finance_subset_naf_output/19961204/234048newsML.txt_8caf21cb783c6c6c446482986b08f797.naf.bz2";
+# 	$DD = [$d];
+# 	last;
+# }
+# &display_stats($DD);
+
+&display_stats($Docs);
 &gantt($Docs, 0) if $opt_gantt;
 
 sub docs_statistics {
