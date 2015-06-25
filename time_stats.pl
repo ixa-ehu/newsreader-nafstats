@@ -52,7 +52,7 @@ if (defined $opt_threshold) {
 }
 print STDERR "Using threshold $opt_threshold\n" if $opt_v;
 
-my $Docs = []; # ( { beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
+my $Docs = []; # ( { fname=>"doc.xml", beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, btstamp=> tics, etstamp=>tics }, ...], ... )
 
 if ($opts{'r'}) {
 	print STDERR "Reading JSON file ".$opts{'r'}."... " if $opt_v;
@@ -115,6 +115,7 @@ sub docs_statistics {
 		# $doc = { beg=>tstamp, end=>tstamp, modules=>{ name=>string, secs=>int } }
 		my $doc = &stat_doc($fh);
 		next unless defined $doc;
+		$doc->{fname} = "$fname";
 		$Proc_docs{$md5} = 1;
 		push @{ $Docs }, $doc;
 		$doc_N++;
