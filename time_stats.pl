@@ -176,26 +176,7 @@ sub display_stats {
 
 	my $Docs = shift;
 
-	my $tot_beg = 100000000000;
-	my $tot_end = 0;
-	my %H;
-	my $doc_N = 0;
-	my $doc_proctime = 0;  # document processing time
-	my $module_proctime = 0; # module processing time
-
-	foreach my $doc ( @{ $Docs } ) {
-		$doc_N++;
-		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
-		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
-		$doc_proctime += $doc->{end} - $doc->{beg};
-		foreach my $dd ( @{ $doc->{modules} } ) {
-			my $name = $dd->{name};
-			my $secs =  $dd->{secs};
-			$H{$name} += $secs;
-			$module_proctime += $secs;
-		}
-	}
-	die "No documents\n" unless $doc_N;
+	my ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs);
 	my $elapsed_time = $tot_end - $tot_beg;
 	die "No elapsed time" unless $elapsed_time > 0;
 	die "No document processing time" unless $doc_proctime > 0;
@@ -205,9 +186,9 @@ sub display_stats {
 		die "Error. Idle time ($idle) is greater than elapsed time ($elapsed_time)\n";
 	}
 	print "* Modules\n\n";
-	foreach my $name (sort { $H{$a} <=> $H{$b} } keys %H) {
-		my $h = $H{$name};
-		printf("| %s | %i | %.2f |\n", $name, $H{$name}, 100*$H{$name} / $module_proctime);
+	foreach my $name (sort { $H->{$a} <=> $H->{$b} } keys %{ $H }) {
+		my $h = $H->{$name};
+		printf("| %s | %i | %.2f |\n", $name, $H->{$name}, 100*$H->{$name} / $module_proctime);
 	}
 
 	my $throughput = sprintf("%.4f", 60 * $doc_N / ($elapsed_time - $idle)); # docs/minutes
@@ -226,6 +207,41 @@ sub display_stats {
 	print "Latency (doc_proctime_minutes/DocN): $latency\n";
 	print "beg:".&get_datetime($tot_beg)."\n";
 	print "end:".&get_datetime($tot_end)."\n";
+}
+
+sub compute_stats {
+	my ($Docs, $doc_N) = @_;
+
+	$doc_N = scalar @{ $Docs } unless defined $doc_N;
+	my $tot_beg = 100000000000;
+	my $tot_end = 0;
+	my $H = {};
+	my $doc_proctime = 0;  # document processing time
+	my $module_proctime = 0; # module processing time
+
+	for (my $i = 0; $i < $doc_N; $i++) {
+		my $doc = $Docs->[$i];
+		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
+		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
+		$doc_proctime += $doc->{end} - $doc->{beg};
+		foreach my $dd ( @{ $doc->{modules} } ) {
+			my $name = $dd->{name};
+			my $secs =  $dd->{secs};
+			$H->{$name} += $secs;
+			$module_proctime += $secs;
+		}
+	}
+	return ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H);
+
+	die "No documents\n" unless $doc_N;
+	my $elapsed_time = $tot_end - $tot_beg;
+	die "No elapsed time" unless $elapsed_time > 0;
+	die "No document processing time" unless $doc_proctime > 0;
+	die "No module processing time" unless $module_proctime > 0;
+	my $idle = &compute_idle($Docs);
+	if ($idle > $elapsed_time) {
+		die "Error. Idle time ($idle) is greater than elapsed time ($elapsed_time)\n";
+	}
 }
 
 sub compute_idle {
