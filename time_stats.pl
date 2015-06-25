@@ -54,7 +54,7 @@ if (defined $opt_threshold) {
 }
 print STDERR "Using threshold $opt_threshold\n" if $opt_v;
 
-my $Docs = []; # ( { fname=>"doc.xml", beg=>tstamp, end=>tstamp, idle=>secs, modules=>[ {name=>string, secs=>int, host=>hostname, beg=> tics, end=>tics }, ...], ... )
+my $Docs = []; # ( { fname=>"doc.xml", beg=>tstamp, end=>tstamp, modules=>[ {name=>string, secs=>int, host=>hostname, beg=> tics, end=>tics }, ...], ... )
 
 if ($opts{'r'}) {
 	print STDERR "Reading JSON file ".$opts{'r'}."... " if $opt_v;
@@ -186,8 +186,8 @@ sub display_stats {
 	foreach my $doc ( @{ $Docs } ) {
 		$doc_N++;
 		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
-		$tot_end = $doc->{end} - $doc->{idle} if $doc->{end} - $doc->{idle} > $tot_end;
-		$doc_proctime += $doc->{end} - $doc->{beg} - $doc->{idle};
+		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
+		$doc_proctime += $doc->{end} - $doc->{beg};
 		foreach my $dd ( @{ $doc->{modules} } ) {
 			my $name = $dd->{name};
 			my $secs =  $dd->{secs};
@@ -268,7 +268,6 @@ sub stat_doc {
 	return undef unless @D;
 	return { beg => $D[0]->{beg},
 			 end => $D[0]->{end},
-			 idle => 0,
 			 modules => \@D } if @D == 1;
 
 	@D = sort { $a->{beg} <=> $b->{beg} } @D;
@@ -284,8 +283,7 @@ sub stat_doc {
 	# 	$prev = $r->{end};
 	# }
 	return { beg => $D[0]->{beg},
-			 end => $D[-1]->{end},
-			 idle => $module_idle,
+			 end => $D[-1]->{end} - $module_idle, # remove idle time
 			 modules => \@D } ;
 }
 
