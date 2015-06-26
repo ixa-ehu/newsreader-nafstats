@@ -174,14 +174,14 @@ sub R_proctime_vector {
 # print stats
 sub display_stats {
 
-	my $Docs = shift;
+	my ($Docs, $ibeg, $iend) = @_;
 
-	my ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs);
+	my ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
 	my $elapsed_time = $tot_end - $tot_beg;
 	die "No elapsed time" unless $elapsed_time > 0;
 	die "No document processing time" unless $doc_proctime > 0;
 	die "No module processing time" unless $module_proctime > 0;
-	my $idle = &compute_idle($Docs);
+	my $idle = &compute_idle($Docs, $ibeg, $iend);
 	if ($idle > $elapsed_time) {
 		die "Error. Idle time ($idle) is greater than elapsed time ($elapsed_time)\n";
 	}
@@ -210,16 +210,22 @@ sub display_stats {
 }
 
 sub compute_stats {
-	my ($Docs, $doc_N) = @_;
+	my ($Docs, $ibeg, $iend) = @_;
 
-	$doc_N = scalar @{ $Docs } unless defined $doc_N;
+	if (not defined $ibeg) {
+		$ibeg = 0;
+		$iend = scalar @{ $Docs } unless defined $iend;
+	} else {
+		$iend = scalar @{ $Docs } if $iend > scalar @{$Docs};
+	}
 	my $tot_beg = 100000000000;
 	my $tot_end = 0;
 	my $H = {};
 	my $doc_proctime = 0;  # document processing time
 	my $module_proctime = 0; # module processing time
-
-	for (my $i = 0; $i < $doc_N; $i++) {
+	my $doc_N = 0;
+	for (my $i = $ibeg; $i < $iend; $i++) {
+		$doc_N++;
 		my $doc = $Docs->[$i];
 		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
 		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
@@ -232,27 +238,24 @@ sub compute_stats {
 		}
 	}
 	return ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H);
-
-	die "No documents\n" unless $doc_N;
-	my $elapsed_time = $tot_end - $tot_beg;
-	die "No elapsed time" unless $elapsed_time > 0;
-	die "No document processing time" unless $doc_proctime > 0;
-	die "No module processing time" unless $module_proctime > 0;
-	my $idle = &compute_idle($Docs);
-	if ($idle > $elapsed_time) {
-		die "Error. Idle time ($idle) is greater than elapsed time ($elapsed_time)\n";
-	}
 }
 
 sub compute_idle {
 
-	my ($Docs) = @_; # Docs are sorted according to doc begining timestamp
+	my ($Docs, $ibeg, $iend) = @_; # Docs are sorted according to doc begining timestamp
+
+	if (not defined $ibeg) {
+		$ibeg = 0;
+		$iend = scalar @{ $Docs } unless defined $iend;
+	} else {
+		$iend = scalar @{ $Docs } if $iend > scalar @{$Docs};
+	}
 	my $N = scalar @{ $Docs };
 
-	my $i = 0;
+	my $i = $ibeg;
 	my $idle_time = 0;
 
-	while($i < $N - 1) {
+	while($i < $iend - 1) {
 		my $j = $i + 1;
 		$j++ while $j < $N and $Docs->[$j]->{end} < $Docs->[$i]->{end};
 		if ($j < $N) {
