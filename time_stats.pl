@@ -176,7 +176,7 @@ sub display_stats {
 
 	my ($Docs, $ibeg, $iend) = @_;
 
-	my ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
+	my ($doc_N, $W, $S, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
 	my $elapsed_time = $tot_end - $tot_beg;
 	die "No elapsed time" unless $elapsed_time > 0;
 	die "No document processing time" unless $doc_proctime > 0;
@@ -192,19 +192,25 @@ sub display_stats {
 	}
 
 	my $throughput = sprintf("%.4f", 60 * $doc_N / ($elapsed_time - $idle)); # docs/minutes
+	my $throughput_W = sprintf("%.4f", 60 * $W / ($elapsed_time - $idle));
+	my $throughput_S = sprintf("%.4f", 60 * $S / ($elapsed_time - $idle));
 	my $throughput_noidle = sprintf("%.4f", 60 * $doc_N / $elapsed_time); # docs/minutes
 	my $latency = sprintf("%.4f",1/60 * $doc_proctime / $doc_N);  # minutes/docs
+	my $latency_W = sprintf("%.10e",1/60 * $doc_proctime / $W);  # minutes/sentences
+	my $latency_S = sprintf("%.4f",1/60 * $doc_proctime / $S);  # minutes/words
 
 	print "\n\n";
 	print "\n** stats\n\n";
 	print "DocN:$doc_N\n";
+	print "Words:$W\n";
+	print "Sentences:$S\n";
 	print "Document processing time (secs): $doc_proctime\n";
 	print "Elapsed time (secs): $elapsed_time\n";
 	print "Parallelism rate: ".sprintf("%.4f", $doc_proctime / $elapsed_time)."\n";
 	print "Idle time (secs): $idle\n";
-	print "Throughput (DocN/elapsed_time_minutes): $throughput\n";
-	print "Throughput with no idle time (more than $IDLE_TIME secs): $throughput_noidle\n";
-	print "Latency (doc_proctime_minutes/DocN): $latency\n";
+	print "Throughput (Doc/elapsed_time_minutes, S/min, W/min): $throughput $throughput_S $throughput_W\n";
+	print "Throughput (docs) with no idle time (more than $IDLE_TIME secs): $throughput_noidle\n";
+	print "Latency (doc_proctime_minutes/DocN proc/S proc/W): $latency $latency_S $latency_W\n";
 	print "beg:".&get_datetime($tot_beg)."\n";
 	print "end:".&get_datetime($tot_end)."\n";
 }
@@ -218,6 +224,8 @@ sub compute_stats {
 	} else {
 		$iend = scalar @{ $Docs } if $iend > scalar @{$Docs};
 	}
+	my $W = 0;
+	my $S = 0;
 	my $tot_beg = 100000000000;
 	my $tot_end = 0;
 	my $H = {};
@@ -227,6 +235,8 @@ sub compute_stats {
 	for (my $i = $ibeg; $i < $iend; $i++) {
 		$doc_N++;
 		my $doc = $Docs->[$i];
+		$W += $doc->{w};
+		$S += $doc->{s};
 		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
 		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
 		$doc_proctime += $doc->{end} - $doc->{beg};
@@ -237,7 +247,7 @@ sub compute_stats {
 			$module_proctime += $secs;
 		}
 	}
-	return ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H);
+	return ($doc_N, $W, $S, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H);
 }
 
 sub compute_idle {
@@ -282,6 +292,7 @@ sub stat_doc {
 
 	my $doc_elem = $doc->getDocumentElement;
 
+	my ($w, $s) = &count_words_sentences($doc_elem);
 	my @D;
 	foreach my $elem ($doc_elem->findnodes('/NAF/nafHeader/linguisticProcessors')) {
 		# { name => module_name, btsamp->timestamp_tics, etsamp->timestamp_tics, secs=>secs}
@@ -292,7 +303,9 @@ sub stat_doc {
 	return { beg => $D[0]->{beg},
 			 end => $D[0]->{end},
 			 idle => 0,
-			 modules => \@D } if @D == 1;
+			 modules => \@D,
+			 w => $w,
+			 s => $s } if @D == 1;
 
 	@D = sort { $a->{beg} <=> $b->{beg} } @D;
 	my $module_idle = &compute_idle(\@D);
@@ -309,7 +322,9 @@ sub stat_doc {
 	return { beg => $D[0]->{beg},
 			 end => $D[-1]->{end},
 			 idle => $module_idle, # remove idle time
-			 modules => \@D } ;
+			 modules => \@D,
+			 w => $w,
+			 s => $s } ;
 }
 
 sub tstamp_attr {
@@ -355,6 +370,25 @@ sub lingProc_lps {
 		push @D, $r;
 	}
 	return @D;
+}
+
+sub count_words_sentences {
+	my $root = shift;
+
+	my $w = 0;
+	my $s = 0;
+	my $last_s = undef;
+	foreach my $w_elem ($root->findnodes('/NAF/text/wf')) {
+		$w++;
+		my $ws = $w_elem->getAttribute('sent');
+		if ($ws ne $last_s) {
+			$s++;
+			$last_s = $ws;
+		}
+	}
+
+	$s = 1 if $w and not defined $last_s;
+	return ($w, $s);
 }
 
 sub open_maybe_bz2 {
