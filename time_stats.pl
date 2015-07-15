@@ -330,7 +330,7 @@ sub lingProc_lps {
 	my %modh;
 	foreach my $elem ($lingproc_elem->findnodes('./lp')) {
 		my $modname = $elem->getAttribute("name");
-		next unless $modh{$pre.$modname};
+		next if $modh{$pre.$modname};
 		$modh{$pre.$modname} = 1; # do not count repeated modules
 		my $host = $elem->getAttribute("hostname") // "unknown";
 		my ($Btstamp, $Etstamp) = &tstamp_attr($elem);
