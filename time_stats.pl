@@ -20,7 +20,12 @@ sub usage {
 
 	my $str = shift;
 	my $bn = basename($0);
-	print STDERR "usage: $bn [-g] [-F] [-d dataset_name] [-f file_with_filename_listings] [-v] [-w docs.json] [-r docs.json] files\n";
+	print STDERR "usage: $bn [-n] [-g] [-F] [-d dataset_name] [-f file_with_filename_listings] [-v] [-w docs.json] [-r docs.json] files\n";
+	print STDERR "\t-f file.txt\t read NAF file names from file.txt\n";
+	print STDERR "\t-w docs.json\t write headers to JSON\n";
+	print STDERR "\t-r docs.json \t read headers from JSON\n";
+	print STDERR "\t-g\t display gantt\n";
+	print STDERR "\t-F\t force processing\n";
 	print STDERR "$str\n" if $str;
 	exit 1;
 }
@@ -125,7 +130,7 @@ sub docs_statistics {
 	foreach my $fname ( @{ $ifnames } ) {
 		# docs_wc_naf/processed/2014/5BW1-BXH1-JBVM-Y11G.xml_7f8b76e4dfb40ecbd97ef1bbf611d685.naf.bz2
 		my $md5 = substr(basename($fname, ".naf.bz2"), -32);
-		next if not $opt_force and $Proc_docs{$md5}; # already processed
+		next if $md5 =~ /^\d+$/ and not $opt_force and $Proc_docs{$md5}; # already processed
 		my $fh = &open_maybe_bz2($fname);
 		next unless defined $fh;
 		# $doc = { beg=>tstamp, end=>tstamp, modules=>{ name=>string, secs=>int } }
