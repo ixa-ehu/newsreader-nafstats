@@ -209,12 +209,13 @@ sub display_stats {
 	print "DocN:$doc_N\n";
 	print "Words:$W\n";
 	print "Sentences:$S\n";
-	print "Document processing time (secs): $doc_proctime\n";
-	print "Elapsed time (secs): $elapsed_time\n";
+	print "Document processing time (secs): $doc_proctime (min):". sprintf("%.4f", $doc_proctime / 60) ."\n";
+	print "Modules processing time (secs): $module_proctime (min):". sprintf("%.4f", $module_proctime / 60) ."\n";
+	print "Elapsed time (secs): $elapsed_time (min):". sprintf("%.4f",$elapsed_time / 60) ."\n";
 	print "Parallelism rate: ".sprintf("%.4f", $doc_proctime / $elapsed_time)."\n";
 	print "Idle time (secs): $idle\n";
 	print "Throughput (Doc/elapsed_time_minutes, S/min, W/min): $throughput $throughput_S $throughput_W\n";
-	print "Throughput (docs) with no idle time (more than $IDLE_TIME secs): $throughput_noidle\n";
+	print "Throughput (docs) not counting idle time (more than $IDLE_TIME secs): $throughput_noidle\n";
 	print "Latency (doc_proctime_minutes/DocN proc/S proc/W): $latency $latency_S $latency_W\n";
 	print "beg:".&get_datetime($tot_beg)."\n";
 	print "end:".&get_datetime($tot_end)."\n";
