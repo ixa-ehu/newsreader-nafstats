@@ -182,8 +182,9 @@ sub display_stats {
 	my ($Docs, $ibeg, $iend) = @_;
 
 	my $size_stats = {};
-	my ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
+	my ($doc_N, $tot_beg, $tot_end, $doc_elapsed_min, $doc_elapsed_max, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
 	my ($W, $S, $min_w, $max_w, $min_s, $max_s, $avg_w, $variance_w) = &compute_size_stats($Docs, $ibeg, $iend);
+	die "No documents\n" unless $doc_N;
 	die "No words\n" unless $W;
 	my $elapsed_time = $tot_end - $tot_beg;
 	die "No elapsed time\n" unless $elapsed_time > 0;
@@ -215,7 +216,7 @@ sub display_stats {
 	printf ("Average words: %.4f  variance: %.4f\n", $avg_w, $variance_w);
 	printf ("Document processing time (secs): %s (minutes): %.4f\n", $doc_proctime, $doc_proctime / 60);
 	printf ("Modules processing time (secs): %s (minutes): %.4f\n", $module_proctime, $module_proctime / 60);
-	printf ("Elapsed time (secs): %d (minutes): %.4f\n", $elapsed_time, $elapsed_time / 60);
+	printf ("Elapsed time (secs, minutes): (%d, %.4f) avg: (%d, %.4f) min: (%d, %.4f) max: (%d, %.4f)\n",$ elapsed_time, $elapsed_time / 60, $doc_elapsed_min, $doc_elapsed_min / 60, $doc_elapsed_max, $doc_elapsed_max / 60);
 	printf ("Parallelism rate: %.4f\n", $doc_proctime / $elapsed_time);
 	printf ("Idle time (secs): %d\n", $idle);
 	printf ("Throughput (Doc/elapsed_time_minutes, S/min, W/min): %s %s %s\n", $throughput, $throughput_S, $throughput_W);
@@ -240,9 +241,14 @@ sub compute_stats {
 	my $doc_proctime = 0;  # document processing time
 	my $module_proctime = 0; # module processing time
 	my $doc_N = 0;
+	my $doc_elapsed_min = 100000000000;
+	my $doc_elapsed_max = 0;
 	for (my $i = $ibeg; $i < $iend; $i++) {
 		$doc_N++;
 		my $doc = $Docs->[$i];
+		my $elapsed = $doc->{end} - $doc->{beg};
+		$doc_elapsed_min = $elapsed if $elapsed < $doc_elapsed_min;
+		$doc_elapsed_max = $elapsed if $elapsed > $doc_elapsed_max;
 		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
 		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
 		$doc_proctime += $doc->{end} - $doc->{beg};
@@ -253,7 +259,7 @@ sub compute_stats {
 			$module_proctime += $secs;
 		}
 	}
-	return ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H);
+	return ($doc_N, $tot_beg, $tot_end, $doc_elapsed_min, $doc_elapsed_max, $doc_proctime, $module_proctime, $H);
 }
 
 sub compute_size_stats {
