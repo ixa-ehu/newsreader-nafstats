@@ -181,11 +181,14 @@ sub display_stats {
 
 	my ($Docs, $ibeg, $iend) = @_;
 
-	my ($doc_N, $W, $S, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
+	my $size_stats = {};
+	my ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
+	my ($W, $S, $min_w, $max_w, $min_s, $max_s, $avg_w, $variance_w) = &compute_size_stats($Docs, $ibeg, $iend);
+	die "No words\n" unless $W;
 	my $elapsed_time = $tot_end - $tot_beg;
-	die "No elapsed time" unless $elapsed_time > 0;
-	die "No document processing time" unless $doc_proctime > 0;
-	die "No module processing time" unless $module_proctime > 0;
+	die "No elapsed time\n" unless $elapsed_time > 0;
+	die "No document processing time\n" unless $doc_proctime > 0;
+	die "No module processing time\n" unless $module_proctime > 0;
 	my $idle = &compute_idle($Docs, $ibeg, $iend);
 	if ($idle > $elapsed_time) {
 		die "Error. Idle time ($idle) is greater than elapsed time ($elapsed_time)\n";
@@ -204,21 +207,22 @@ sub display_stats {
 	my $latency_W = sprintf("%.10e",1/60 * $doc_proctime / $W);  # minutes/sentences
 	my $latency_S = sprintf("%.4f",1/60 * $doc_proctime / $S);  # minutes/words
 
-	print "\n\n";
-	print "\n** stats\n\n";
-	print "DocN:$doc_N\n";
-	print "Words:$W\n";
-	print "Sentences:$S\n";
-	print "Document processing time (secs): $doc_proctime (min):". sprintf("%.4f", $doc_proctime / 60) ."\n";
-	print "Modules processing time (secs): $module_proctime (min):". sprintf("%.4f", $module_proctime / 60) ."\n";
-	print "Elapsed time (secs): $elapsed_time (min):". sprintf("%.4f",$elapsed_time / 60) ."\n";
-	print "Parallelism rate: ".sprintf("%.4f", $doc_proctime / $elapsed_time)."\n";
-	print "Idle time (secs): $idle\n";
-	print "Throughput (Doc/elapsed_time_minutes, S/min, W/min): $throughput $throughput_S $throughput_W\n";
-	print "Throughput (docs) not counting idle time (more than $IDLE_TIME secs): $throughput_noidle\n";
-	print "Latency (doc_proctime_minutes/DocN proc/S proc/W): $latency $latency_S $latency_W\n";
-	print "beg:".&get_datetime($tot_beg)."\n";
-	print "end:".&get_datetime($tot_end)."\n";
+	printf ("\n\n");
+	printf ("\n** stats\n\n");
+	printf ("DocN:%d\n", $doc_N);
+	printf ("Words:%d (min:%d max:%d)\n", $W, $min_w, $max_w);
+	printf ("Sentences:%d (min:%d max:%d)\n", $S, $min_s, $max_s);
+	printf ("Average words: %.4f  variance: %.4f\n", $avg_w, $variance_w);
+	printf ("Document processing time (secs): %s (minutes): %.4f\n", $doc_proctime, $doc_proctime / 60);
+	printf ("Modules processing time (secs): %s (minutes): %.4f\n", $module_proctime, $module_proctime / 60);
+	printf ("Elapsed time (secs): %d (minutes): %.4f\n", $elapsed_time, $elapsed_time / 60);
+	printf ("Parallelism rate: %.4f\n", $doc_proctime / $elapsed_time);
+	printf ("Idle time (secs): %d\n", $idle);
+	printf ("Throughput (Doc/elapsed_time_minutes, S/min, W/min): %s %s %s\n", $throughput, $throughput_S, $throughput_W);
+	printf ("Throughput (docs) not counting idle time (more than $IDLE_TIME secs): %s\n", $throughput_noidle);
+	printf ("Latency (doc_proctime_minutes/DocN proc/S proc/W): %s %s %s\n", $latency, $latency_S, $latency_W);
+	printf ("beg: %s\n", &get_datetime($tot_beg));
+	printf ("end: %s\n",&get_datetime($tot_end));
 }
 
 sub compute_stats {
@@ -230,8 +234,6 @@ sub compute_stats {
 	} else {
 		$iend = scalar @{ $Docs } if $iend > scalar @{$Docs};
 	}
-	my $W = 0;
-	my $S = 0;
 	my $tot_beg = 100000000000;
 	my $tot_end = 0;
 	my $H = {};
@@ -241,8 +243,6 @@ sub compute_stats {
 	for (my $i = $ibeg; $i < $iend; $i++) {
 		$doc_N++;
 		my $doc = $Docs->[$i];
-		$W += $doc->{w};
-		$S += $doc->{s};
 		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
 		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
 		$doc_proctime += $doc->{end} - $doc->{beg};
@@ -253,7 +253,47 @@ sub compute_stats {
 			$module_proctime += $secs;
 		}
 	}
-	return ($doc_N, $W, $S, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H);
+	return ($doc_N, $tot_beg, $tot_end, $doc_proctime, $module_proctime, $H);
+}
+
+sub compute_size_stats {
+
+	my ($Docs, $ibeg, $iend) = @_;
+
+	if (not defined $ibeg) {
+		$ibeg = 0;
+		$iend = scalar @{ $Docs } unless defined $iend;
+	} else {
+		$iend = scalar @{ $Docs } if $iend > scalar @{$Docs};
+	}
+	my $w = 0;
+	my $s = 0;
+	my $min_w = 1000000000;
+	my $max_w = 0;
+	my $min_s = 1000000000;
+	my $max_s = 0;
+	my $avg_w = 0;
+	my $var_w = 0;
+	my $doc_N = 0;
+
+	for (my $i = $ibeg; $i < $iend; $i++) {
+		$doc_N++;
+		my $doc = $Docs->[$i];
+		$max_w = $doc->{w} if $doc->{w} > $max_w;
+		$min_w = $doc->{w} if $doc->{w} < $min_w;
+		$max_s = $doc->{s} if $doc->{s} > $max_s;
+		$min_s = $doc->{s} if $doc->{s} < $min_s;
+		$w += $doc->{w};
+		$s += $doc->{s};
+	}
+	return undef unless $doc_N;
+	$avg_w = $w / $doc_N;
+	for (my $i = $ibeg; $i < $iend; $i++) {
+		my $doc = $Docs->[$i];
+		$var_w += ($doc->{w} - $avg_w) * ($doc->{w} - $avg_w);
+	}
+
+	return ($w, $s, $min_w, $max_w, $min_s, $max_s, $avg_w, $var_w / $doc_N);
 }
 
 sub compute_idle {
