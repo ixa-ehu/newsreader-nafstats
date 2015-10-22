@@ -182,13 +182,13 @@ sub display_stats {
 	my ($Docs, $ibeg, $iend) = @_;
 
 	my $size_stats = {};
-	my ($doc_N, $tot_beg, $tot_end, $doc_elapsed_min, $doc_elapsed_max, $doc_proctime, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
+	my ($doc_N, $tot_beg, $tot_end, $doc_elapsed_min, $doc_elapsed_max, $doc_elapsed, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
 	my ($W, $S, $min_w, $max_w, $min_s, $max_s, $avg_w, $variance_w) = &compute_size_stats($Docs, $ibeg, $iend);
 	die "No documents\n" unless $doc_N;
 	die "No words\n" unless $W;
 	my $elapsed_time = $tot_end - $tot_beg;
 	die "No elapsed time\n" unless $elapsed_time > 0;
-	die "No document processing time\n" unless $doc_proctime > 0;
+	die "No document processing time\n" unless $doc_elapsed > 0;
 	die "No module processing time\n" unless $module_proctime > 0;
 	my $idle = &compute_idle($Docs, $ibeg, $iend);
 	if ($idle > $elapsed_time) {
@@ -200,13 +200,14 @@ sub display_stats {
 		printf("| %s | %i | %.2f |\n", $name, $H->{$name}, 100*$H->{$name} / $module_proctime);
 	}
 
-	my $throughput = sprintf("%.4f", 60 * $doc_N / ($elapsed_time - $idle)); # docs/minutes
-	my $throughput_W = sprintf("%.4f", 60 * $W / ($elapsed_time - $idle));
-	my $throughput_S = sprintf("%.4f", 60 * $S / ($elapsed_time - $idle));
+	my $elapsed_time_minus_idle = $elapsed_time - $idle;
+	my $throughput = sprintf("%.4f", 60 * $doc_N / $elapsed_time_minus_idle); # docs/minutes
+	my $throughput_W = sprintf("%.4f", 60 * $W / $elapsed_time_minus_idle);
+	my $throughput_S = sprintf("%.4f", 60 * $S / $elapsed_time_minus_idle);
 	my $throughput_noidle = sprintf("%.4f", 60 * $doc_N / $elapsed_time); # docs/minutes
-	my $latency = sprintf("%.4f",1/60 * $doc_proctime / $doc_N);  # minutes/docs
-	my $latency_W = sprintf("%.10e",1/60 * $doc_proctime / $W);  # minutes/sentences
-	my $latency_S = sprintf("%.4f",1/60 * $doc_proctime / $S);  # minutes/words
+	my $latency = sprintf("%.4f",1/60 * $doc_elapsed / $doc_N);  # minutes/docs
+	my $latency_W = sprintf("%.10e",1/60 * $doc_elapsed / $W);  # minutes/sentences
+	my $latency_S = sprintf("%.4f",1/60 * $doc_elapsed / $S);  # minutes/words
 
 	printf ("\n\n");
 	printf ("\n** stats\n\n");
@@ -214,14 +215,14 @@ sub display_stats {
 	printf ("Words:%d (min:%d max:%d)\n", $W, $min_w, $max_w);
 	printf ("Sentences:%d (min:%d max:%d)\n", $S, $min_s, $max_s);
 	printf ("Average words: %.4f  variance: %.4f\n", $avg_w, $variance_w);
-	printf ("Document processing time (secs): %s (minutes): %.4f\n", $doc_proctime, $doc_proctime / 60);
+	printf ("Document elapsed time (secs): %s (minutes): %.4f\n", $doc_elapsed, $doc_elapsed / 60);
 	printf ("Modules processing time (secs): %s (minutes): %.4f\n", $module_proctime, $module_proctime / 60);
-	printf ("Elapsed time (secs, minutes): (%d, %.4f) avg: (%d, %.4f) min: (%d, %.4f) max: (%d, %.4f)\n",$ elapsed_time, $elapsed_time / 60, $doc_elapsed_min, $doc_elapsed_min / 60, $doc_elapsed_max, $doc_elapsed_max / 60);
-	printf ("Parallelism rate: %.4f\n", $doc_proctime / $elapsed_time);
+	printf ("Elapsed time (secs, minutes): (%d, %.4f) min: (%d, %.4f) max: (%d, %.4f)\n",$elapsed_time_minus_idle, $elapsed_time_minus_idle / 60, $doc_elapsed_min, $doc_elapsed_min / 60, $doc_elapsed_max, $doc_elapsed_max / 60);
+	printf ("Parallelism rate: %.4f\n", $doc_elapsed / $elapsed_time_minus_idle);
 	printf ("Idle time (secs): %d\n", $idle);
 	printf ("Throughput (Doc/elapsed_time_minutes, S/min, W/min): %s %s %s\n", $throughput, $throughput_S, $throughput_W);
 	printf ("Throughput (docs) not counting idle time (more than $IDLE_TIME secs): %s\n", $throughput_noidle);
-	printf ("Latency (doc_proctime_minutes/DocN proc/S proc/W): %s %s %s\n", $latency, $latency_S, $latency_W);
+	printf ("Latency (doc_elapsed_minutes/DocN proc/S proc/W): %s %s %s\n", $latency, $latency_S, $latency_W);
 	printf ("beg: %s\n", &get_datetime($tot_beg));
 	printf ("end: %s\n",&get_datetime($tot_end));
 }
@@ -238,7 +239,7 @@ sub compute_stats {
 	my $tot_beg = 100000000000;
 	my $tot_end = 0;
 	my $H = {};
-	my $doc_proctime = 0;  # document processing time
+	my $doc_elapsed = 0;  # elapsed time processing document
 	my $module_proctime = 0; # module processing time
 	my $doc_N = 0;
 	my $doc_elapsed_min = 100000000000;
@@ -247,11 +248,11 @@ sub compute_stats {
 		$doc_N++;
 		my $doc = $Docs->[$i];
 		my $elapsed = $doc->{end} - $doc->{beg};
+		$doc_elapsed += $elapsed;
 		$doc_elapsed_min = $elapsed if $elapsed < $doc_elapsed_min;
 		$doc_elapsed_max = $elapsed if $elapsed > $doc_elapsed_max;
 		$tot_beg = $doc->{beg} if $doc->{beg} < $tot_beg;
 		$tot_end = $doc->{end} if $doc->{end} > $tot_end;
-		$doc_proctime += $doc->{end} - $doc->{beg};
 		foreach my $dd ( @{ $doc->{modules} } ) {
 			my $name = $dd->{name};
 			my $secs =  $dd->{secs};
@@ -259,7 +260,7 @@ sub compute_stats {
 			$module_proctime += $secs;
 		}
 	}
-	return ($doc_N, $tot_beg, $tot_end, $doc_elapsed_min, $doc_elapsed_max, $doc_proctime, $module_proctime, $H);
+	return ($doc_N, $tot_beg, $tot_end, $doc_elapsed_min, $doc_elapsed_max, $doc_elapsed, $module_proctime, $H);
 }
 
 sub compute_size_stats {
