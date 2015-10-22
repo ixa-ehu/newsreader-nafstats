@@ -205,9 +205,22 @@ sub display_stats {
 	my $throughput_W = sprintf("%.4f", 60 * $W / $elapsed_time_minus_idle);
 	my $throughput_S = sprintf("%.4f", 60 * $S / $elapsed_time_minus_idle);
 	my $throughput_noidle = sprintf("%.4f", 60 * $doc_N / $elapsed_time); # docs/minutes
+
 	my $latency = sprintf("%.4f",1/60 * $doc_elapsed / $doc_N);  # minutes/docs
 	my $latency_W = sprintf("%.10e",1/60 * $doc_elapsed / $W);  # minutes/sentences
 	my $latency_S = sprintf("%.4f",1/60 * $doc_elapsed / $S);  # minutes/words
+
+	my $latency_secs = sprintf("%.4f",$doc_elapsed / $doc_N);  # secs/docs
+	my $latency_secs_W = sprintf("%.10e",$doc_elapsed / $W);  # secs/sentences
+	my $latency_secs_S = sprintf("%.4f", $doc_elapsed / $S);  # secs/words
+
+	my $latency_et = sprintf("%.4f",1/60 * $elapsed_time_minus_idle / $doc_N);  # minutes/docs
+	my $latency_et_W = sprintf("%.10e",1/60 * $elapsed_time_minus_idle / $W);  # minutes/sentences
+	my $latency_et_S = sprintf("%.4f",1/60 * $elapsed_time_minus_idle / $S);  # minutes/words
+
+	my $latency_et_secs = sprintf("%.4f",$elapsed_time_minus_idle / $doc_N);  # secs/docs
+	my $latency_et_secs_W = sprintf("%.10e",$elapsed_time_minus_idle / $W);  # secs/sentences
+	my $latency_et_secs_S = sprintf("%.4f", $elapsed_time_minus_idle / $S);  # secs/words
 
 	printf ("\n\n");
 	printf ("\n** stats\n\n");
@@ -223,6 +236,9 @@ sub display_stats {
 	printf ("Throughput (Doc/elapsed_time_minutes, S/min, W/min): %s %s %s\n", $throughput, $throughput_S, $throughput_W);
 	printf ("Throughput (docs) not counting idle time (more than $IDLE_TIME secs): %s\n", $throughput_noidle);
 	printf ("Latency (doc_elapsed_minutes/DocN proc/S proc/W): %s %s %s\n", $latency, $latency_S, $latency_W);
+	printf ("Latency (doc_elapsed_seconds/DocN proc/S proc/W): %s %s %s\n", $latency_secs, $latency_secs_S, $latency_secs_W);
+	printf ("Latency (elapsed_time_minutes/DocN proc/S proc/W): %s %s %s\n", $latency_et, $latency_et_S, $latency_et_W);
+	printf ("Latency (elapsed_time_seconds/DocN proc/S proc/W): %s %s %s\n", $latency_et_secs, $latency_et_secs_S, $latency_et_secs_W);
 	printf ("beg: %s\n", &get_datetime($tot_beg));
 	printf ("end: %s\n",&get_datetime($tot_end));
 }
