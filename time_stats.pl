@@ -42,11 +42,11 @@ getopts('ht:r:w:vf:d:gFm', \%opts);
 
 &usage() if $opts{'h'};
 
-my $opt_gantt = $opts{'g'} // undef;
+my $opt_gantt = $opts{'g'};
 
-my $opt_force = $opts{'F'} // undef;
+my $opt_force = $opts{'F'};
 
-my $dataset_name = $opts{'d'} // undef;
+my $dataset_name = $opts{'d'};
 
 my $opt_threshold = 5;
 
@@ -449,7 +449,8 @@ sub lingProc_lps {
 		my $modname = $elem->getAttribute("name");
 		next if $modh{$pre.$modname};
 		$modh{$pre.$modname} = 1; # do not count repeated modules
-		my $host = $elem->getAttribute("hostname") // "unknown";
+		my $host = $elem->getAttribute("hostname");
+		$host = "unknown" unless defined $host;
 		my ($Btstamp, $Etstamp) = &tstamp_attr($elem);
 		next unless defined $Btstamp;
 		# heuristics for modules which do bad.
@@ -774,7 +775,8 @@ sub docs_statistics_mongo {
 		}
 		$h->{beg} = $tstamp if $tstamp < $h->{beg};
 		$h->{end} = $tstamp if $tstamp > $h->{end};
-		my $mid = $mout->{module_id} // $mout->{tag};
+		my $mid = $mout->{module_id};
+		$mid = $mout->{tag} unless defined $mid;
 		my $module = $h->{module}->{$mid};
 		if (not defined $module) {
 			$h->{module}->{$mid} = { beg => $tstamp, end => $tstamp };
