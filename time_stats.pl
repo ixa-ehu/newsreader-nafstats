@@ -8,7 +8,6 @@ use Encode;
 use JSON;
 use Data::Dumper;
 use IO::Uncompress::Bunzip2 qw(bunzip2 $Bunzip2Error) ;
-use Data::Dumper;
 
 use strict;
 
@@ -116,6 +115,35 @@ if ($opts{'w'}) {
 # }
 # &display_stats($DD);
 
+# {
+# 	my $delta = int(scalar @{$Docs} * 0.1);
+# 	my $last_i = 0;
+# 	for (my $i = $delta; $i < scalar @{$Docs}; $i += $delta) {
+# 		my ($doc_N, $tot_beg, $tot_end, $doc_elapsed, $module_proctime, $H) = &compute_stats($Docs, $last_i, $i);
+# 		$last_i = $i;
+# 		printf("%.4f\n", $doc_elapsed / ($tot_end - $tot_beg));
+# 	}
+# }
+#
+# {
+# 	for(my $i = int(scalar @{$Docs} * 0.1); $i < int(scalar @{$Docs} * 0.9); $i++) {
+# 		print $Docs->[$i]->{fname}."\n";
+# 	}
+# 	exit;
+# }
+
+
+# remove first and last 10%, but increase unti 70.000
+# my $left = int(scalar @{$Docs} * 0.1);
+# my $right = int(scalar @{$Docs} * 0.9);
+# while($right - $left < 70000) {$right++;}
+# # for(my $i = $left; $i < $right; $i++) {
+# # 	print $Docs->[$i]->{fname}."\n";
+# # }
+# # die;
+# &display_stats($Docs, $left, $right);
+# exit;
+
 &display_stats($Docs);
 &gantt($Docs, 0) if $opt_gantt;
 
@@ -183,7 +211,7 @@ sub display_stats {
 
 	my $size_stats = {};
 	my ($doc_N, $tot_beg, $tot_end, $doc_elapsed_min, $doc_elapsed_max, $doc_elapsed, $module_proctime, $H) = &compute_stats($Docs, $ibeg, $iend);
-	my ($W, $S, $min_w, $max_w, $min_s, $max_s, $avg_w, $variance_w) = &compute_size_stats($Docs, $ibeg, $iend);
+	my ($W, $S, $min_w, $max_w, $min_s, $max_s, $avg_w, $variance_w, $stddev_w, $avg_s, $variance_s, $stddev_s) = &compute_size_stats($Docs, $ibeg, $iend);
 	die "No documents\n" unless $doc_N;
 	die "No words\n" unless $W;
 	my $elapsed_time = $tot_end - $tot_beg;
@@ -227,9 +255,10 @@ sub display_stats {
 	printf ("DocN:%d\n", $doc_N);
 	printf ("Words:%d (min:%d max:%d)\n", $W, $min_w, $max_w);
 	printf ("Sentences:%d (min:%d max:%d)\n", $S, $min_s, $max_s);
-	printf ("Average words: %.4f  variance: %.4f\n", $avg_w, $variance_w);
-	printf ("Document elapsed time (secs): %s (minutes): %.4f\n", $doc_elapsed, $doc_elapsed / 60);
-	printf ("Modules processing time (secs): %s (minutes): %.4f\n", $module_proctime, $module_proctime / 60);
+	printf ("Average words: %.4f  variance: %.4f  stddev: %.4f\n", $avg_w, $variance_w, $stddev_w);
+	printf ("Average sentences: %.4f  variance: %.4f  stddev: %.4f\n", $avg_s, $variance_s, $stddev_s);
+	printf ("Document elapsed time (secs): %s; (minutes): %.4f\n", $doc_elapsed, $doc_elapsed / 60);
+	printf ("Modules processing time (secs): %s; (minutes): %.4f\n", $module_proctime, $module_proctime / 60);
 	printf ("Elapsed time (secs, minutes): (%d, %.4f) min: (%d, %.4f) max: (%d, %.4f)\n",$elapsed_time_minus_idle, $elapsed_time_minus_idle / 60, $doc_elapsed_min, $doc_elapsed_min / 60, $doc_elapsed_max, $doc_elapsed_max / 60);
 	printf ("Parallelism rate: %.4f\n", $doc_elapsed / $elapsed_time_minus_idle);
 	printf ("Idle time (secs): %d\n", $idle);
@@ -297,6 +326,8 @@ sub compute_size_stats {
 	my $max_s = 0;
 	my $avg_w = 0;
 	my $var_w = 0;
+	my $avg_s = 0;
+	my $var_s = 0;
 	my $doc_N = 0;
 
 	for (my $i = $ibeg; $i < $iend; $i++) {
@@ -311,12 +342,14 @@ sub compute_size_stats {
 	}
 	return undef unless $doc_N;
 	$avg_w = $w / $doc_N;
+	$avg_s = $s / $doc_N;
 	for (my $i = $ibeg; $i < $iend; $i++) {
 		my $doc = $Docs->[$i];
 		$var_w += ($doc->{w} - $avg_w) * ($doc->{w} - $avg_w);
+		$var_s += ($doc->{s} - $avg_s) * ($doc->{s} - $avg_s);
 	}
 
-	return ($w, $s, $min_w, $max_w, $min_s, $max_s, $avg_w, $var_w / $doc_N);
+	return ($w, $s, $min_w, $max_w, $min_s, $max_s, $avg_w, $var_w / $doc_N, sqrt($var_w / $doc_N), $avg_s, $var_s / $doc_N, sqrt($var_s / $doc_N));
 }
 
 sub compute_idle {
